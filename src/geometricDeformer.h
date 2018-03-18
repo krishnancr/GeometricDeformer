@@ -26,6 +26,8 @@ public:
 
 	static MObject a_compoundInfluences;
 	static MObject a_inflPoint;
+	static MObject a_inflRadius;
+
 	static MTypeId	id;
 
 };

@@ -13,9 +13,8 @@
 
 MTypeId     GeometricDeformer::id(0x00000256);
 MObject     GeometricDeformer::a_inflPoint;
+MObject     GeometricDeformer::a_inflRadius;
 MObject     GeometricDeformer::a_compoundInfluences;
-
-
 
 GeometricDeformer::GeometricDeformer()
 {
@@ -43,23 +42,32 @@ MStatus GeometricDeformer::deform(MDataBlock& data, MItGeometry& itGeo,
 	{
 		MArrayDataHandle inputArray = data.inputArrayValue(a_compoundInfluences);
 		unsigned int inputArrayCount = inputArray.elementCount();
+		MArrayDataHandle radiusArray = data.inputArrayValue(a_inflRadius);
+		unsigned int radiusArrayCount = radiusArray.elementCount();
+		if (radiusArrayCount != inputArrayCount)
+		{
+			return MStatus::kFailure;
+		}
 		for (unsigned int i = 0; i < inputArrayCount; i++)
 		{
 			MDataHandle targetElement = inputArray.inputValue();
 			MVector H = targetElement.child(a_inflPoint).asFloat3();
+			float radius = radiusArray.inputValue().asFloat();
 			MPoint point = itGeo.position();
 			MVector M = point * localToWorldMatrix;
 			MVector u(M - H);
 			double p = u.length();
-			// Setting a hard coded value around the Influence Point just as a starting point
-			MPoint I = H + MPoint(1.0f, 1.0f, 1.0f, 1.0f);
+			// Setting just a sphere for now
+			MPoint I = H + MPoint(radius, radius, radius, 1.0f);
 			double p0 = MVector(I - H).length();
 			u.normalize();
 			double p_prime = std::cbrt(std::pow(p0, 3) + std::pow(p, 3)) ;
 			MPoint M_prime = H + p_prime * u;
 			M_prime *= worldToLocalMatrix;
 			itGeo.setPosition(M_prime);
+			
 			inputArray.next();
+			radiusArray.next();
 		}
 	}
 
@@ -70,23 +78,24 @@ MStatus GeometricDeformer::deform(MDataBlock& data, MItGeometry& itGeo,
 MStatus GeometricDeformer::initialize()
 {
 	MStatus status;
-
 	// Attribute Initialization
-	MFnMatrixAttribute mAttr;
 	MFnNumericAttribute nAttr;
 	MFnCompoundAttribute compAttr;
 
-	
 	a_compoundInfluences = compAttr.create("influences", "influenes", &status);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 	a_inflPoint = nAttr.create("inflPoint", "inflPoint", MFnNumericData::k3Float);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
-
 	status = compAttr.addChild(a_inflPoint);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 	status = compAttr.setArray(true);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 	status = compAttr.setDisconnectBehavior(MFnAttribute::kDelete);
+	CHECK_MSTATUS_AND_RETURN_IT(status);
+
+	a_inflRadius = nAttr.create("inflRadius", "inflRadius", MFnNumericData::kFloat);
+	nAttr.setArray(true);
+	status = addAttribute(a_inflRadius);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
 	status = addAttribute(a_compoundInfluences);
@@ -95,6 +104,8 @@ MStatus GeometricDeformer::initialize()
 	status = attributeAffects(a_inflPoint, outputGeom);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 	status = attributeAffects(a_compoundInfluences, outputGeom);
+	CHECK_MSTATUS_AND_RETURN_IT(status);
+	status = attributeAffects(a_inflRadius, outputGeom);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 
 	return status;
