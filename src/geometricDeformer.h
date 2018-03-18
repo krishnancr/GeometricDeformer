@@ -4,7 +4,6 @@
 #include <maya/MDagModifier.h>
 #include <maya/MGlobal.h>
 #include <maya/MFnMatrixAttribute.h>
-#include <maya/MFnNumericAttribute.h>
 #include <maya/MItGeometry.h>
 #include <maya/MMatrix.h>
 #include <maya/MPoint.h>
@@ -26,7 +25,7 @@ public:
 	static  MStatus		initialize();
 
 	static MObject a_inflPoint;
-
+	static MObject a_deformingMesh;
 	static MTypeId	id;
 
 };
