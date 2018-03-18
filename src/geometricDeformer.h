@@ -24,6 +24,7 @@ public:
 
 	static  MStatus		initialize();
 
+	static MObject a_compoundInfluences;
 	static MObject a_inflPoint;
 	static MTypeId	id;
 
