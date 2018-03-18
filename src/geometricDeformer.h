@@ -25,7 +25,6 @@ public:
 	static  MStatus		initialize();
 
 	static MObject a_inflPoint;
-	static MObject a_deformingMesh;
 	static MTypeId	id;
 
 };
