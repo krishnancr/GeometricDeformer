@@ -26,7 +26,12 @@ public:
 
 	static MObject a_compoundInfluences;
 	static MObject a_inflPoint;
-	static MObject a_inflRadius;
+	static MObject a_compoundRadius;
+	static MObject a_inflRadii; 
+	static MObject a_objectType;
+
+	
+
 
 	static MTypeId	id;
 
