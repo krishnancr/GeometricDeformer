@@ -12,7 +12,11 @@
 #include <maya/MDataBlock.h>
 #include <maya/MDataHandle.h>
 #include <maya/MArrayDataHandle.h>
+#include <maya/MFloatPointArray.h>
 
+#include <tbb/parallel_for.h>
+#include <tbb/blocked_range.h>
+#include <tbb/task_scheduler_init.h>
 
 
 MTypeId     GeometricDeformer::id(0x00000256);
@@ -29,6 +33,33 @@ struct InfluenceType
 	static const int kEllipsoid = 1;
 };
 
+/*
+struct mytask {
+	mytask
+	(
+		const std::vector<unsigned int> influenceObject,
+		const std::vector <MPoint> infuenceRadius,
+		const std::vector <MVector> toolCentre
+	) :
+		m_influenceObject(influenceObject),
+		m_infuenceRadius(infuenceRadius),
+		m_toolCentre(toolCentre)
+	{}
+	
+	void operator()(const tbb::blocked_range<size_t>& r) const
+	{
+		for (size_t i = r.begin(); i != r.end(); ++i)
+		{
+			MGlobal::displayInfo("Ramarajan");
+		}
+	}
+
+	const std::vector<unsigned int> m_influenceObject;
+	const std::vector <MPoint> m_infuenceRadius;
+	const std::vector <MVector> m_toolCentre;
+};
+
+*/
 GeometricDeformer::GeometricDeformer()
 {
 
@@ -50,36 +81,76 @@ MStatus GeometricDeformer::deform(MDataBlock& data, MItGeometry& itGeo,
 	const MMatrix& localToWorldMatrix, unsigned int geomIndex)
 {
 	MStatus status;
+	
+	/*
+	
+		Stuff setup for tbb parallelization 
+	*/
+	
+	/*
+	tbb::task_scheduler_init init;  
+	tbb::parallel_for(tbb::blocked_range<size_t>(0, 10), mytask());
 
+	MObject thisNode = this->thisMObject();
+	MPlug outPlug(thisNode, outputGeom);
+	status = outPlug.selectAncestorLogicalIndex(0, outputGeom);
+	CHECK_MSTATUS_AND_RETURN_IT(status);
+	MDataHandle outputData = data.outputValue(outPlug);
+	if (outputData.type() != MFnData::kMesh) 
+	{
+		std::cerr << "Incorrect output mesh type" << std::endl;
+		return MStatus::kFailure;
+	}
+	MObject oSurf = outputData.asMesh();
+	if (oSurf.isNull()) 
+	{
+		std::cout << "Output surface is NULL" << std::endl ;
+		return MStatus::kFailure;
+	}
+
+	MFnMesh outMesh;
+	outMesh.setObject(oSurf);
+	CHECK_MSTATUS_AND_RETURN_IT(status);
+	MFloatPointArray pts;
+	outMesh.getPoints(pts);
+	*/
+
+	MArrayDataHandle inputArray = data.inputArrayValue(a_compoundInfluences);
+	unsigned int inputArrayCount = inputArray.elementCount();
+	MArrayDataHandle radiusArray = data.inputArrayValue(a_compoundRadius);
+	unsigned int radiusArrayCount = radiusArray.elementCount();
+	MArrayDataHandle objTypeArray = data.inputArrayValue(a_objectType);
+	unsigned int objTypeCount = objTypeArray.elementCount();
+
+	if ((inputArrayCount != radiusArrayCount) || (inputArrayCount != objTypeCount))
+	{
+		MGlobal::displayError("Count does not match between influence Object , their radii and their type");
+		return MStatus::kFailure;
+	}
+	
+	std::vector<MVector> H_vectors(inputArrayCount);
+	std::vector<MPoint> radiusVec(radiusArrayCount);
+	std::vector<unsigned int> objectType(objTypeCount);
+	
+	for (unsigned int i = 0; i < inputArrayCount; i++)
+	{
+		H_vectors[i] = inputArray.inputValue().child(a_inflPoint).asFloat3();
+		radiusVec[i] = radiusArray.inputValue().child(a_inflRadii).asFloat3();
+		objectType[i] = objTypeArray.inputValue().asInt();
+			
+		objTypeArray.next();
+		inputArray.next();
+		radiusArray.next();
+	}
+	
 	MMatrix worldToLocalMatrix = localToWorldMatrix.inverse();
 	for (; !itGeo.isDone(); itGeo.next())
 	{
-		MArrayDataHandle inputArray = data.inputArrayValue(a_compoundInfluences);
-		unsigned int inputArrayCount = inputArray.elementCount();
-
-		MArrayDataHandle radiusArray = data.inputArrayValue(a_compoundRadius);
-		unsigned int radiusArrayCount = radiusArray.elementCount();
-
-		MArrayDataHandle objTypeArray = data.inputArrayValue(a_objectType);
-		unsigned int objTypeCount = objTypeArray.elementCount();
-
-		if (radiusArrayCount != inputArrayCount)
-		{
-			return MStatus::kFailure;
-		}
-
-		std::vector<unsigned int> objectType(objTypeCount);
-		for (unsigned int i = 0; i < objTypeCount; i++)
-		{
-			objectType[i] = objTypeArray.inputValue().asInt();
-			objTypeArray.next();
-		}
-
 		for (unsigned int i = 0; i < inputArrayCount; i++)
 		{
 
-			MVector H = inputArray.inputValue().child(a_inflPoint).asFloat3();
-			MPoint radius = radiusArray.inputValue().child(a_inflRadii).asFloat3();
+			MVector H = H_vectors[i];
+			MPoint radius = radiusVec[i];
 			int objType = objectType[i];
 
 			
@@ -98,13 +169,12 @@ MStatus GeometricDeformer::deform(MDataBlock& data, MItGeometry& itGeo,
 			else if (objType == InfluenceType::kEllipsoid)
 			{
 				// Parametrization of ellipse with a couple of harcoded values for angles 
-				float theta = 0.5;
-				float gamma = 0.2;
+				double theta = 1.507;
+				double gamma = 1.507;
 				point_on_inflObj.x = radius.x * std::sin(gamma) * std::cos(theta);
 				point_on_inflObj.y = radius.y * std::sin(gamma) * std::sin(theta);
 				point_on_inflObj.z = radius.z * std::cos(gamma);
 			}
-
 
 			MPoint I = H + point_on_inflObj;
 			double p0 = MVector(I - H).length();
@@ -113,9 +183,6 @@ MStatus GeometricDeformer::deform(MDataBlock& data, MItGeometry& itGeo,
 			MPoint M_prime = H + p_prime * u;
 			M_prime *= worldToLocalMatrix;
 			itGeo.setPosition(M_prime);
-			
-			inputArray.next();
-			radiusArray.next();
 
 		}
 	}

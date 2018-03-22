@@ -8,7 +8,10 @@ set(SOURCE_FILES
 find_package(Maya REQUIRED)
 
 include_directories(${MAYA_INCLUDE_DIR})
+
 link_directories(${MAYA_LIBRARY_DIR})
+# I know this is terrible. I'll fix this soon
+link_directories("D:/Autodesk/Maya2017/lib")
 
 add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES})
 
