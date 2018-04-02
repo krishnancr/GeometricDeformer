@@ -13,7 +13,7 @@
 #include <maya/MDataHandle.h>
 #include <maya/MArrayDataHandle.h>
 #include <maya/MFloatPointArray.h>
-
+#include <maya/MStreamUtils.h>
 
 #include <tbb/parallel_for.h>
 #include <tbb/blocked_range.h>
@@ -60,40 +60,36 @@ struct parallel_deform {
 			for (size_t j = 0; j < m_influenceObject.size(); j++)
 			{
 
-				MVector H = m_toolCentre[j];
+				MVector toolCentre = m_toolCentre[j];
 				MPoint radius = m_infuenceRadius[j];
 				int objType = m_influenceObject[j];
 						
-				MPoint point = m_meshPoints[i];
-				MVector M = point * m_localToWorldMatrix;
-				MVector u(M - H);
-				double p = u.length();
+				MVector pointOnMesh = MPoint(m_meshPoints[i]) * m_localToWorldMatrix;
+				MVector directionVector(pointOnMesh - toolCentre);
+				double p = directionVector.length();
 
-				MPoint point_on_inflObj;
+				MPoint pointOnInflObj;
 
 				if (objType == InfluenceType::kSphere)
 				{
-					// A sphere with a user defined radius
-					point_on_inflObj = MPoint(radius.x, radius.y, radius.z,1.0f);
+					// A sphere with a user defined constant radius
+					pointOnInflObj = MPoint(radius.x, radius.x, radius.x,1.0f);
 				}
 				else if (objType == InfluenceType::kEllipsoid)
 				{
-					// Parametrization of ellipse with a couple of harcoded values for angles 
-					double theta = 1.507;
-					double gamma = 1.507;
-					point_on_inflObj.x = radius.x * std::sin(gamma) * std::cos(theta);
-					point_on_inflObj.y = radius.y * std::sin(gamma) * std::sin(theta);
-					point_on_inflObj.z = radius.z * std::cos(gamma);
+					// Parametrization of ellipse with variable values for x y and z radii
+					pointOnInflObj = MPoint(radius.x, radius.y, radius.z, 1.0f);
 				}
 
-				MPoint I = H + point_on_inflObj;
-				double p0 = MVector(I - H).length();
-				u.normalize();
-				double p_prime = std::cbrt(std::pow(p0, 3) + std::pow(p, 3)) ;
-				MPoint M_prime = H + p_prime * u;
-				M_prime *= m_worldToLocalMatrix;
+				MPoint boundryIntersectionPoint = toolCentre + pointOnInflObj;
+				double p0 = MVector(boundryIntersectionPoint - toolCentre).length();
+				directionVector.normalize();
+
+				double p_prime = std::cbrt(std::pow(p0, 3) + std::pow(p, 3));
+				MPoint M_prime = toolCentre + p_prime * directionVector;
+				pointOnMesh = M_prime * m_worldToLocalMatrix;
 				
-				m_meshPoints.set(M_prime, i);
+				m_meshPoints.set(pointOnMesh, i);
 			}
 		}
 		
@@ -130,12 +126,8 @@ MStatus GeometricDeformer::deform(MDataBlock& data, MItGeometry& itGeo,
 {
 	MStatus status;
 	MMatrix worldToLocalMatrix = localToWorldMatrix.inverse();
-	
-	/*
-	
-		Stuff setup for tbb parallelization 
-	*/
-	
+
+	// Getting the mesh from the output Geom plug
 	MObject thisNode = this->thisMObject();
 	MPlug outPlug(thisNode, outputGeom);
 	status = outPlug.selectAncestorLogicalIndex(0, outputGeom);
@@ -154,13 +146,14 @@ MStatus GeometricDeformer::deform(MDataBlock& data, MItGeometry& itGeo,
 		return MStatus::kFailure;
 	}
 
+	// Getting all points of the mesh
 	MFnMesh outMesh;
 	outMesh.setObject(oSurf);
 	CHECK_MSTATUS_AND_RETURN_IT(status);
 	MFloatPointArray origPoints;
-	MFloatPointArray finalPoints(origPoints);
 	outMesh.getPoints(origPoints, MSpace::kTransform);
 
+	// Getting all the input arrays for radius, object type and position
 	MArrayDataHandle inputArray = data.inputArrayValue(a_compoundInfluences);
 	unsigned int inputArrayCount = inputArray.elementCount();
 	MArrayDataHandle radiusArray = data.inputArrayValue(a_compoundRadius);
@@ -170,6 +163,7 @@ MStatus GeometricDeformer::deform(MDataBlock& data, MItGeometry& itGeo,
 
 	if ((inputArrayCount != radiusArrayCount) || (inputArrayCount != objTypeCount))
 	{
+		// Returning an error if the indices dont match
 		MGlobal::displayError("Count does not match between influence Object , their radii and their type");
 		return MStatus::kFailure;
 	}
@@ -180,6 +174,7 @@ MStatus GeometricDeformer::deform(MDataBlock& data, MItGeometry& itGeo,
 	
 	for (unsigned int i = 0; i < inputArrayCount; i++)
 	{
+		// Populating the values of each of the compound attributes in an array
 		H_vectors[i] = inputArray.inputValue().child(a_inflPoint).asFloat3();
 		radiusVec[i] = radiusArray.inputValue().child(a_inflRadii).asFloat3();
 		objectType[i] = objTypeArray.inputValue().asInt();
@@ -190,6 +185,7 @@ MStatus GeometricDeformer::deform(MDataBlock& data, MItGeometry& itGeo,
 	}
 
 	tbb::task_scheduler_init init;
+	// Executing the deformation as a tbb parallel for 
 	tbb::parallel_for(
 			tbb::blocked_range<size_t>(0, origPoints.length()),
 		parallel_deform(
