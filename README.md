@@ -6,4 +6,5 @@ It's been implemented as a Maya Deformer
 Currently, it accepts multiple influences and the influence shapes are spheres or ellipsoids
 
 
-
+Acknowledgements: 
+* I've used ChadVernon's cmake script helpers to get this project building. https://github.com/chadmv/cgcmake
